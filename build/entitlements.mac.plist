@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Entitlements needed for hardened-runtime macOS builds:
+      - allow-jit / allow-unsigned-executable-memory: Electron's V8 needs JIT.
+      - disable-library-validation: lets node-pty's spawn-helper and other
+        bundled native modules load even though they're signed with a
+        different identity than the main app (or ad-hoc signed).
+      - allow-dyld-environment-variables: lets node-pty set the DYLD_*
+        variables it needs when forking the PTY child shell.
+    Without these, the spawn-helper is blocked at runtime and every terminal
+    in the packaged app stays blank.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

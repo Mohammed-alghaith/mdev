@@ -1,0 +1,119 @@
+@import 'xterm/css/xterm.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── theme tokens ─────────────────────────────────────────────────────────
+   Colors are space-separated RGB channels so Tailwind can emit
+   `rgb(var(--ink-900) / <alpha-value>)`. Toggling `data-theme="light"` on
+   <html> swaps the whole palette without touching any component class. */
+:root {
+  --ink-900: 18 18 18;
+  --ink-800: 24 24 24;
+  --ink-700: 32 32 32;
+  --ink-600: 43 43 43;
+  --ink-500: 55 55 55;
+  --ink-400: 78 78 78;
+  --ink-300: 158 158 158;
+  --ink-200: 203 203 203;
+  --ink-100: 236 236 236;
+
+  --accent-500: 192 140 255;
+  --accent-400: 212 177 255;
+  --accent-300: 226 204 255;
+  --accent-200: 237 224 255;
+  --accent-100: 246 239 255;
+  --accent-fg: 18 18 18;
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.16);
+  --scrollbar-thin: rgba(255, 255, 255, 0.06);
+  --scrollbar-thin-hover: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme='light'] {
+  --ink-900: 245 246 250;
+  --ink-800: 255 255 255;
+  --ink-700: 228 231 240;
+  --ink-600: 216 220 233;
+  --ink-500: 199 204 221;
+  --ink-400: 166 171 191;
+  --ink-300: 105 111 137;
+  --ink-200: 62 67 89;
+  --ink-100: 26 29 43;
+
+  --accent-500: 139 92 246;
+  --accent-400: 124 58 237;
+  --accent-300: 109 40 217;
+  --accent-200: 91 33 182;
+  --accent-100: 76 29 149;
+  --accent-fg: 255 255 255;
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.32);
+  --scrollbar-thin: rgba(0, 0, 0, 0.14);
+  --scrollbar-thin-hover: rgba(0, 0, 0, 0.26);
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: theme('fontFamily.sans');
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  background: rgb(var(--ink-900));
+  color: rgb(var(--ink-100));
+}
+
+/* Terminal scrollbars */
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 8px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Allow text selection inside terminal + inputs */
+.xterm, .selectable, textarea, input {
+  user-select: text;
+}
+
+/* Hide terminal cursor — input happens exclusively through the PromptBar */
+.xterm-cursor { display: none; }
+
+/* Drag region for the title bar (macOS hidden inset) */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+.titlebar-nodrag {
+  -webkit-app-region: no-drag;
+}
+
+/* Suppress Chromium's default focus outline on chrome buttons — it lingers
+   as a stark square after click on macOS. Inputs and textareas keep their
+   focus styling via Tailwind's focus:border / focus:ring utilities. */
+button:focus {
+  outline: none;
+}
+button:focus-visible {
+  outline: 2px solid rgb(var(--accent-500));
+  outline-offset: 1px;
+}
+
+/* Subtle scrollbars for app panels */
+.scroll-thin::-webkit-scrollbar { width: 8px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--scrollbar-thin); border-radius: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thin-hover); }

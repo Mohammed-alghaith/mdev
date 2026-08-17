@@ -1,26 +1,28 @@
-# Code Generator
+# Mdev
 
-A lightweight desktop terminal that wraps the official **Claude CLI** (`@anthropic-ai/claude-code`) in a friendly UI. Built with Electron + React + Tailwind + xterm.js + node-pty.
+A desktop wrapper for the **Claude CLI / Claude Agent SDK** in a friendly multi-pane UI, with built-in support for routing through **DeepSeek** (or any Anthropic-compatible endpoint). Built with Electron + React 18 + Tailwind + xterm.js + node-pty + Monaco.
 
-The app **never** calls `api.anthropic.com` directly. It spawns the locally installed `claude` binary inside a child PTY, so it runs entirely on top of your existing Claude Pro/Max terminal subscription.
+It does **not** call `api.anthropic.com` directly. Every agent runs through the Agent SDK's CLI, and the model provider is switchable — paste a DeepSeek API key in Settings and you're running DeepSeek models inside a full Claude Code experience.
 
 ## Features
 
-- **Multi-tab terminals** — each tab is an independent `node-pty` session.
-- **Chat-style prompt bar** — large bottom textarea (Enter to send, Shift+Enter for newline) instead of a raw shell prompt.
-- **Voice dictation** — built-in mic button uses the Web Speech API to transcribe locally into the input box.
-- **Visual history sidebar** — every submitted prompt is saved; click to load, "Run again" to re-send.
-- **System shell fallback** — when `claude` isn't running, the tab behaves as a normal `zsh`/`bash`/PowerShell session.
+- **Terminal tabs** — each is an independent `node-pty` session running the Claude Code TUI (and still a plain `zsh`/`bash`/PowerShell shell when Claude isn't running).
+- **Agent tabs** — a native Agent SDK surface with rendered markdown, streaming output, and tool-permission prompts (`Cmd/Ctrl+Shift+A`).
+- **Browser preview** — a side-pane `<webview>` for previewing a running dev server, plus a full-mode toggle. The agent can open and navigate it itself.
+- **Code editor** — a Monaco-backed pane with syntax highlighting and save support.
+- **File manager** — browse the active project and open files in the editor.
+- **Voice dictation** — a mic button transcribes into the prompt via the Web Speech API.
+- **Session sidebar** — every Claude session across your projects, with resume / hide / delete and a live context-window meter.
+- **Five permission modes** — Ask / Plan / Act / Safe / Auto, hot-switchable mid-session.
+- **Model picker** — Claude (Opus / Sonnet / Haiku, incl. 1M variants) plus custom providers.
+- **Dark / light theme**.
 
 ## Requirements
 
 - Node.js **20+**
-- npm or pnpm
-- The Claude CLI installed globally and on your `PATH`:
-  ```bash
-  npm install -g @anthropic-ai/claude-code
-  claude --version
-  ```
+- npm
+
+The Agent SDK ships its own CLI binary, so you do **not** need a global `claude` install.
 
 ## Install
 
@@ -28,11 +30,17 @@ The app **never** calls `api.anthropic.com` directly. It spawns the locally inst
 npm install
 ```
 
-`node-pty` is a native module and will be rebuilt against Electron's Node ABI by the `postinstall` script. If that step is skipped (or you change Electron versions), run:
+`node-pty` is a native module and is rebuilt against Electron's Node ABI automatically. If that step is skipped (or you change Electron versions), run:
 
 ```bash
 npm run rebuild
 ```
+
+## Configure a provider (DeepSeek)
+
+Open **Settings** and paste a DeepSeek API key (base URL defaults to `https://api.deepseek.com/anthropic`). Models from any configured provider appear in the prompt-bar dropdown.
+
+Under the hood this sets the standard `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_MODEL` env vars on the spawned CLI, redirecting API calls to DeepSeek's Anthropic-compatible endpoint.
 
 ## Develop
 
@@ -40,51 +48,60 @@ npm run rebuild
 npm run dev
 ```
 
-This starts Vite on port 5173 and launches Electron once it's ready.
+Starts Vite on port 5173 and launches Electron once it's ready.
 
 ## Build
 
 ```bash
-npm run dist
+npm run dist   # macOS (.dmg)
 ```
 
-Builds the renderer with Vite and packages the app via electron-builder.
+Windows and macOS installers are also built automatically by the GitHub Actions workflow in `.github/workflows/build-windows.yml` — an NSIS `.exe` and a `.dmg`, uploaded as artifacts on every push to `main`, on version tags, and manually.
+
+## The agent's tools (MCP)
+
+Four in-process tools are exposed to every agent as `mcp__mdev__*`:
+
+- `open_browser(url)` — open a new browser tab in the side pane (http/https only).
+- `navigate_browser(url, [tabId])` — navigate the existing side-pane browser.
+- `open_in_editor(path)` — open a file in the Monaco editor (absolute paths).
+- `screenshot_browser([tabId])` — capture the rendered page as PNG **plus OCR text**, so the agent can visually verify a UI change even with a text-only model like DeepSeek.
+
+URL validation runs in both the tool handler and the renderer (defense in depth); `file://` is currently blocked everywhere.
+
+## Keyboard shortcuts
+
+- `Cmd/Ctrl + Shift + A` — new agent tab
+- `Cmd/Ctrl + N` — restart the current session
+- `Esc` — focus the prompt bar
 
 ## Project layout
 
 ```
 electron/
-  main.js         Electron main process — spawns node-pty, IPC, history store
-  preload.js      Secure contextBridge API exposed to the renderer
+  main.js            Electron main process — PTY spawn, IPC, session/history store
+  preload.js         contextBridge API exposed to the renderer
+  agent-host.mjs     Agent SDK host + in-process MCP tools
 src/
-  App.jsx         Top-level layout, tab/state management
+  App.jsx            Top-level layout, tabs, modes, keyboard shortcuts
   components/
-    TabBar.jsx       Tabs + new/close + sidebar toggle
-    TerminalView.jsx xterm.js host bound to a single PTY
-    Sidebar.jsx      Collapsible history panel
-    PromptBar.jsx    Chat-style textarea + mic + send
+    TerminalView.jsx    xterm.js host bound to one PTY
+    AgentView.jsx       Agent SDK message stream UI
+    BrowserView.jsx     side-pane <webview> preview
+    EditorPane.jsx      Monaco editor
+    FileManager.jsx     project file browser
+    Sidebar.jsx         session/project history
+    PromptBar.jsx       prompt input, mode/model pickers, context meter
+    SettingsDialog.jsx  provider (API key / base URL) config
+    PermissionDialog.jsx tool-permission prompts
   hooks/
-    useSpeech.js  Web Speech API wrapper
-index.html         Renderer entry
-vite.config.js     Vite config
-tailwind.config.js Tailwind theme
+    useSpeech.js        Web Speech API wrapper
+  modelGroups.js        model constants + context-window ceilings
+index.html             renderer entry
 ```
-
-## Giving Claude control of the app (MCP)
-
-The four app tools (`mcp__code-generator__*`) are defined in-process as Claude Agent SDK tools in `electron/agent-host.mjs` — no stdio server or `.mcp.json` setup required. Any Claude/DeepSeek agent tab (Cmd+Shift+A) can call them out of the box.
-
-**Available tools:**
-- `open_browser(url)` — open a new browser tab in the side pane. http(s) only.
-- `navigate_browser(url, [tabId])` — navigate the existing side-pane browser instead of stacking a new tab. http(s) only.
-- `open_in_editor(path)` — open a file in the Monaco editor pane. Absolute paths only.
-- `screenshot_browser([tabId])` — capture a PNG of the rendered browser and return it inline so Claude can visually verify a UI change. This unlocks the "see your change and iterate" loop.
-
-URL scheme validation runs in both the tool handler (main) and the renderer so Claude cannot bypass it. `file://` is currently blocked everywhere; we'll add an opt-in toggle for it later.
 
 ## Notes
 
-- The app uses **`contextIsolation: true`** and never enables `nodeIntegration`. The only renderer↔main surface is the typed `window.api` exposed in `preload.js`.
-- Command history is stored as plain JSON at `app.getPath('userData') + '/history.json'` (capped at 500 entries).
-- The "▶" button in the prompt bar sends `claude\r` to the active tab to launch the CLI; you can also just type any shell command.
-- Voice dictation uses the browser's native `SpeechRecognition`. On macOS Electron this connects to Apple's speech service.
+- Uses `contextIsolation: true` and never enables `nodeIntegration`; the only renderer↔main surface is the typed `window.api` exposed in `preload.js`.
+- Provider settings and preferences are stored locally (`localStorage` / Electron `userData`).
+- Voice dictation uses the browser's native `SpeechRecognition`.

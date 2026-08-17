@@ -1,4 +1,4 @@
-name: Build Windows installer
+name: Build installers
 
 on:
   push:
@@ -8,7 +8,17 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: mdev-windows-installer
+            args: --win nsis
+          - os: macos-latest
+            artifact: mdev-macos-installer
+            args: --mac
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +35,8 @@ jobs:
           path: |
             ~/AppData/Local/electron/Cache
             ~/AppData/Local/electron-builder/Cache
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
           key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
@@ -34,18 +46,21 @@ jobs:
         run: npm run build
 
       # electron-builder rebuilds native deps (node-pty) against Electron's ABI
-      # automatically (npmRebuild is on by default), so no explicit rebuild step.
-      - name: Package Windows installer
-        run: npx --no-install electron-builder --win nsis --publish never
+      # automatically (npmRebuild is on by default). CSC_IDENTITY_AUTO_DISCOVERY
+      # off → unsigned builds (no signing certs in the repo), like the Windows one.
+      - name: Package installer
+        run: npx --no-install electron-builder ${{ matrix.args }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: mdev-windows-installer
+          name: ${{ matrix.artifact }}
           path: |
             dist/*.exe
+            dist/*.dmg
             dist/*.yml
             dist/*.blockmap
           if-no-files-found: error

@@ -68,3 +68,36 @@ jobs:
             dist/*.yml
             dist/*.blockmap
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            Desktop wrapper for the Claude CLI / Claude Agent SDK with a DeepSeek backend.
+
+            **Install**
+            - macOS: `Mdev-*-arm64.dmg`
+            - Windows: `Mdev Setup *.exe`
+
+            **Highlights**
+            - Multi-tab terminals + agent tabs
+            - Browser preview, Monaco editor, file manager, voice dictation
+            - Session sidebar (resume / hide / delete) + live context meter
+            - Five permission modes: Ask / Plan / Act / Safe / Auto
+            - DeepSeek provider support via Settings
+            - In-app MCP tools: open_browser, navigate_browser, open_in_editor, screenshot_browser (with OCR)
+          files: |
+            artifacts/mdev-macos-installer/*.dmg
+            artifacts/mdev-windows-installer/*.exe

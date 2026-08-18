@@ -645,6 +645,63 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('claude:listModels', () => fetchClaudeModels());
 
+  // ───────── Inline autocomplete (ghost text) ─────────
+  // One-shot completion for the prompt input. The renderer resolves a custom
+  // provider's base URL + API key (mirroring buildAgentOptions) and sends them
+  // here; for Anthropic models it sends an `anthropic` marker instead and we
+  // resolve auth via readClaudeAuth(). The fetch runs in main to avoid renderer
+  // CORS. Anthropic Messages format — custom providers expose an
+  // Anthropic-compatible /v1/messages endpoint (the SDK drives them through
+  // ANTHROPIC_BASE_URL the same way, with ANTHROPIC_AUTH_TOKEN ↔ Bearer).
+  ipcMain.handle('ai:complete', async (_evt, { baseUrl, apiKey, model, text, anthropic } = {}) => {
+    if (typeof text !== 'string' || !text.trim()) return { ok: false };
+    try {
+      let url;
+      let headers;
+      if (anthropic) {
+        const auth = readClaudeAuth();
+        if (!auth) return { ok: false };
+        url = 'https://api.anthropic.com';
+        headers = { 'anthropic-version': '2023-06-01', 'content-type': 'application/json' };
+        if (auth.type === 'oauth') {
+          headers['authorization'] = 'Bearer ' + auth.value;
+          headers['anthropic-beta'] = 'oauth-2025-04-20';
+        } else {
+          headers['x-api-key'] = auth.value;
+        }
+      } else {
+        if (!baseUrl || !apiKey || !model) return { ok: false };
+        url = String(baseUrl).replace(/\/+$/, '');
+        headers = {
+          'content-type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'authorization': 'Bearer ' + apiKey,
+        };
+      }
+      const body = {
+        max_tokens: 40,
+        system: "You are an inline autocomplete assistant. Continue the user's input " +
+          'naturally. Return ONLY the continuation text (a few words to one short ' +
+          'sentence). Do not repeat the input and do not add explanation.',
+        messages: [{ role: 'user', content: text }],
+      };
+      if (model) body.model = model;
+      const res = await fetch(url + '/v1/messages', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return { ok: false };
+      const data = await res.json();
+      const completion = (Array.isArray(data?.content)
+        ? data.content.find((b) => b && b.type === 'text')?.text
+        : null) || '';
+      return { ok: true, completion };
+    } catch {
+      return { ok: false };
+    }
+  });
+
   // ───────── Agent SDK bridge ─────────
   // The renderer submits a prompt; the host runs the SDK in the main process
   // and streams SDKMessage events back via agent:event / agent:result / agent:exit.

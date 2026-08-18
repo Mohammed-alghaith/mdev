@@ -110,6 +110,28 @@ function modelBase(model) {
   return String(model || '').split(':')[0];
 }
 
+// Resolve the completion endpoint for the prompt's inline ghost-text autofill.
+// Custom providers (DeepSeek) carry their key + base URL in settings, so we can
+// resolve them in the renderer. Anthropic (or the default model) has no key in
+// settings — we return an `anthropic` marker and let the main process resolve
+// auth via readClaudeAuth(). Returns null only for an unconfigured custom
+// provider (a provider whose model is selected but whose key is missing).
+function resolveCompletionConfig(model, settings) {
+  const base = modelBase(model);
+  for (const [id, prov] of Object.entries(KNOWN_PROVIDERS)) {
+    const match = prov.models.find((m) => m.base === base);
+    if (!match) continue;
+    const cfg = settings?.providers?.[id];
+    if (!cfg?.apiKey) return null;
+    return {
+      baseUrl: cfg.baseUrl || prov.defaultBaseUrl,
+      apiKey: cfg.apiKey,
+      model: base,
+    };
+  }
+  return { model: base, anthropic: true };
+}
+
 function commandAgentCli(cmd) {
   // Search for the CLI name anywhere — custom provider commands have inline
   // env-var prefixes (e.g. "ANTHROPIC_BASE_URL='...' claude ...") so the
@@ -301,6 +323,9 @@ export default function App() {
   // Queue of pending tool-permission requests (from canUseTool). The head is
   // rendered as a modal; replying pops it and resolves the host-side promise.
   const [pendingPermissions, setPendingPermissions] = useState([]);
+  // Whether the OS reports the network as offline. When it drops while an agent
+  // turn is running we cancel the stuck request and show an "Offline" badge.
+  const [offline, setOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine);
   const agentSessionByTabRef = useRef({});
   agentSessionByTabRef.current = agentSessionByTab;
   const promptBarRef = useRef(null);
@@ -316,6 +341,10 @@ export default function App() {
   modeRef.current = mode;
   modelRef.current = model;
   settingsRef.current = settings;
+
+  // Completion endpoint for the prompt bar's ghost-text autofill (null when the
+  // active model is Anthropic or the custom provider has no key configured).
+  const completionConfig = useMemo(() => resolveCompletionConfig(model, settings), [model, settings]);
 
   // Load provider settings once on mount.
   useEffect(() => {
@@ -743,6 +772,29 @@ export default function App() {
     // modal here so the queue doesn't hold a stale, unanswerable request.
     setPendingPermissions((q) => q.filter((r) => r.tabId !== tabId));
   }, []);
+
+  // Latest running-state mirror so the offline handler (a stable event listener)
+  // can read current running tabs without re-subscribing on every turn.
+  const agentRunningRef = useRef(agentRunningByTab);
+  agentRunningRef.current = agentRunningByTab;
+
+  // When the OS drops offline, cancel any in-flight agent turn (it would hang on
+  // a dead network — agent:exit never fires) and surface an "Offline" badge.
+  useEffect(() => {
+    const goOffline = () => {
+      setOffline(true);
+      for (const [id, isRunning] of Object.entries(agentRunningRef.current)) {
+        if (isRunning) stopAgent(id);
+      }
+    };
+    const goOnline = () => setOffline(false);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, [stopAgent]);
 
   // Resolve a pending permission request. `decision` is an SDK PermissionResult
   // ({ behavior:'allow' } | { behavior:'allow', updatedInput } | { behavior:'deny', message }).
@@ -1402,6 +1454,7 @@ export default function App() {
                       key={tab.id}
                       messages={agentMessagesByTab[tab.id] || []}
                       running={!!agentRunningByTab[tab.id]}
+                      offline={offline}
                       visible={visible}
                       onStop={() => stopAgent(tab.id)}
                     />
@@ -1493,6 +1546,8 @@ export default function App() {
               onRestartTab={restartActiveTab}
               launchedModel={activeTerminalId ? launchedModelByTab[activeTerminalId] : ''}
               providerModels={enabledProviderModels(settings)}
+              offline={offline}
+              completionConfig={completionConfig}
             />
           </div>
         </main>

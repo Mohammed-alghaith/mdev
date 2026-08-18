@@ -34,6 +34,8 @@ const PromptBar = forwardRef(function PromptBar({
   onRestartTab,
   launchedModel = '',
   providerModels = [],
+  offline = false,
+  completionConfig = null,
 }, ref) {
   const textareaRef = useRef(null);
 
@@ -42,6 +44,12 @@ const PromptBar = forwardRef(function PromptBar({
   }), []);
   const [interim, setInterim] = useState('');
   const baseTextRef = useRef('');
+  // Inline ghost-text autofill state. `suggestion` is the grey continuation;
+  // `suggestionBaseRef` records the input it was computed for so we only show
+  // it while the text is unchanged; `suggestionSeqRef` discards stale responses.
+  const [suggestion, setSuggestion] = useState('');
+  const suggestionBaseRef = useRef('');
+  const suggestionSeqRef = useRef(0);
 
   // Model list, fetched once from the Anthropic Models API via the main process
   // so new releases appear automatically. Falls back to the hardcoded list until
@@ -82,11 +90,45 @@ const PromptBar = forwardRef(function PromptBar({
     ta.style.height = Math.min(ta.scrollHeight, 240) + 'px';
   }, [value, interim]);
 
+  // Debounced ghost-text completion. Clears any prior suggestion on input, then
+  // after a short idle asks the main process for a continuation of the prompt.
+  useEffect(() => {
+    setSuggestion('');
+    if (!completionConfig) return;
+    const text = value || '';
+    if (!text.trim()) return;
+    const seq = ++suggestionSeqRef.current;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await window.api?.complete?.({ ...completionConfig, text });
+        if (!res?.ok || seq !== suggestionSeqRef.current) return;
+        const completion = String(res.completion || '').trim();
+        if (!completion || completion === text) return;
+        suggestionBaseRef.current = text;
+        setSuggestion(completion);
+      } catch {}
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [value, completionConfig]);
+
   const onKeyDown = (e) => {
+    const hasSuggestion = suggestion && suggestionBaseRef.current === value;
+    if (e.key === 'Tab' && hasSuggestion) {
+      e.preventDefault();
+      onChange(value + suggestion);
+      setSuggestion('');
+      return;
+    }
+    if (e.key === 'Escape' && suggestion) {
+      e.preventDefault();
+      setSuggestion('');
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       const text = (value || '').trim();
       if (text.length === 0) return;
+      setSuggestion('');
       onSubmit(text);
     }
   };
@@ -120,20 +162,30 @@ const PromptBar = forwardRef(function PromptBar({
           </svg>
         </button>
 
-        <textarea
-          ref={textareaRef}
-          value={displayValue}
-          onChange={(e) => {
-            if (speech.listening) speech.stop();
-            baseTextRef.current = e.target.value;
-            onChange(e.target.value);
-          }}
-          onKeyDown={onKeyDown}
-          rows={1}
-          spellCheck={false}
-          placeholder={speech.listening ? 'Listening… speak now' : 'Type a prompt — Enter to send, Shift+Enter for newline'}
-          className="flex-1 resize-none bg-transparent outline-none text-sm text-ink-100 placeholder-ink-300 leading-relaxed max-h-60 selectable"
-        />
+        <div className="relative flex-1 min-w-0">
+          <textarea
+            ref={textareaRef}
+            value={displayValue}
+            onChange={(e) => {
+              if (speech.listening) speech.stop();
+              baseTextRef.current = e.target.value;
+              onChange(e.target.value);
+            }}
+            onKeyDown={onKeyDown}
+            rows={1}
+            spellCheck
+            placeholder={speech.listening ? 'Listening… speak now' : 'Type a prompt — Enter to send, Shift+Enter for newline'}
+            className="w-full resize-none bg-transparent outline-none text-sm text-ink-100 placeholder-ink-300 leading-relaxed max-h-60 selectable"
+          />
+          {!speech.listening && suggestion && suggestionBaseRef.current === value && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 text-sm leading-relaxed whitespace-pre-wrap break-words overflow-hidden text-ink-400 select-none"
+            >
+              <span className="text-transparent">{value}</span>{suggestion}
+            </div>
+          )}
+        </div>
 
         <button
           type="button"
@@ -181,6 +233,12 @@ const PromptBar = forwardRef(function PromptBar({
         </button>
       </div>
       <div className="mt-1.5 px-2 text-[10px] text-ink-300 flex items-center justify-between gap-3 flex-wrap">
+        {offline && (
+          <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 ring-1 ring-red-500/50 font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            Offline
+          </span>
+        )}
         <span className="shrink-0">
           <kbd className="px-1 py-0.5 rounded bg-ink-700 text-ink-200">Enter</kbd> send
           <span className="mx-1.5">·</span>

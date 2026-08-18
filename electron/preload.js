@@ -97,6 +97,7 @@ contextBridge.exposeInMainWorld('api', {
     replyPermission: (tabId, requestId, decision) =>
       ipcRenderer.invoke('agent:permission:reply', { tabId, requestId, decision }),
   },
+  complete: (payload) => ipcRenderer.invoke('ai:complete', payload),
   platform: process.platform,
   homeDir: os.homedir(),
   settings: {

@@ -310,7 +310,7 @@ function Message({ msg }) {
 
 // ─── view ──────────────────────────────────────────────────────────────────
 
-export default function AgentView({ messages = [], running, visible, onStop }) {
+export default function AgentView({ messages = [], running, offline = false, visible, onStop }) {
   const scrollRef = useRef(null);
   // Whether the user wants to follow new content to the bottom. Auto-scroll
   // only while following, so incoming messages don't yank the view away while
@@ -366,18 +366,26 @@ export default function AgentView({ messages = [], running, visible, onStop }) {
       className={'absolute inset-0 ' + (visible ? '' : 'invisible pointer-events-none')}
       aria-hidden={!visible}
     >
-      {running && (
+      {(running || offline) && (
         <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
-          <span className="text-xs text-ink-400">Working…</span>
-          <button
-            onClick={onStop}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/20 text-red-300 text-xs hover:bg-red-500/30 transition"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="1.5" />
-            </svg>
-            Stop
-          </button>
+          {offline ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/20 text-red-300 text-xs ring-2 ring-red-500/50 animate-pulse">
+              Offline
+            </span>
+          ) : (
+            <span className="text-xs text-ink-400">Working…</span>
+          )}
+          {!offline && (
+            <button
+              onClick={onStop}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/20 text-red-300 text-xs hover:bg-red-500/30 transition"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="1.5" />
+              </svg>
+              Stop
+            </button>
+          )}
         </div>
       )}
 
@@ -391,7 +399,12 @@ export default function AgentView({ messages = [], running, visible, onStop }) {
 
           {messages.map((m, i) => <Message key={i} msg={m} />)}
 
-          {running ? (
+          {offline ? (
+            <div className="flex items-center gap-2 text-xs text-red-300 pt-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span>Offline</span>
+            </div>
+          ) : running ? (
             <div className="flex items-center gap-2 text-xs text-ink-400 pt-1">
               <span className="inline-block w-2 h-2 rounded-full bg-accent-400 animate-pulse" />
               <span>Working…</span>
